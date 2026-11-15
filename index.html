@@ -58,14 +58,14 @@ class Parser {
   get c() { return this.t[this.i]; } take() { return this.t[this.i++]; }
   parse() { const n = this.expr(); if (this.c.type !== "EOF")
     throw new ExprError(this.c.type === "RPAREN" ? "extra closing bracket" : "two operands in a row or missing operator", this.c.position); return n; }
-  expr() { let n = this.term(); while ("+-".includes(this.c.lexeme)) { const op = this.take().lexeme; n = { kind:"binary", op, left:n, right:this.term() }; } return n; }
-  term() { let n = this.power(); while ("*/%".includes(this.c.lexeme)) { const op = this.take().lexeme;
-    if (this.c.type === "EOF" || "*/%+-^)".includes(this.c.lexeme)) throw new ExprError("missing operand", this.c.position);
+  expr() { let n = this.term(); while (["+", "-"].includes(this.c.lexeme)) { const op = this.take().lexeme; n = { kind:"binary", op, left:n, right:this.term() }; } return n; }
+  term() { let n = this.power(); while (["*", "/", "%"].includes(this.c.lexeme)) { const op = this.take().lexeme;
+    if (this.c.type === "EOF" || ["*", "/", "%", "+", "-", "^", ")"].includes(this.c.lexeme)) throw new ExprError("missing operand", this.c.position);
     n = { kind:"binary", op, left:n, right:this.power() }; } return n; }
   power() { let n = this.unary(); if (this.c.lexeme === "^") { this.take();
     if (this.c.type === "EOF" || this.c.lexeme === ")") throw new ExprError("missing operand", this.c.position);
     n = { kind:"binary", op:"^", left:n, right:this.power() }; } return n; }
-  unary() { if ("+-".includes(this.c.lexeme)) return { kind:"unary", op:this.take().lexeme, operand:this.unary() }; return this.primary(); }
+  unary() { if (["+", "-"].includes(this.c.lexeme)) return { kind:"unary", op:this.take().lexeme, operand:this.unary() }; return this.primary(); }
   primary() { const x = this.c; if (x.type === "NUMBER") { this.take(); return { kind:"num", value:Number(x.lexeme) }; }
     if (x.type === "LPAREN") { this.take(); if (this.c.type === "RPAREN") throw new ExprError("empty parentheses", this.c.position);
       const n = this.expr(); if (this.c.type !== "RPAREN") throw new ExprError("missing closing bracket", this.c.position); this.take(); return n; }
