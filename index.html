@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arithmetic Expression Analyzer</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; background: #101827; color: #e5e7eb; }
+    main { max-width: 1000px; margin: auto; padding: 32px 18px; }
+    h1 { margin-bottom: 6px; color: #93c5fd; }
+    .subtitle { color: #9ca3af; }
+    textarea, button { font: inherit; border-radius: 8px; }
+    textarea { box-sizing: border-box; width: 100%; min-height: 90px; padding: 14px; color: #f9fafb;
+      background: #1f2937; border: 1px solid #4b5563; resize: vertical; }
+    button { margin: 12px 0; padding: 10px 22px; color: white; background: #2563eb; border: 0; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    pre { white-space: pre-wrap; overflow-x: auto; padding: 18px; border-radius: 8px;
+      background: #030712; border: 1px solid #374151; line-height: 1.45; }
+    .error { color: #fca5a5; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Arithmetic Expression Analyzer</h1>
+  <p class="subtitle">Tokenize, parse, convert, evaluate, and explain arithmetic expressions.</p>
+  <textarea id="expression" aria-label="Expression">(3 + 4) * 2 - 8 / 4 ^ 2</textarea>
+  <br>
+  <button id="analyze">Analyze expression</button>
+  <pre id="output" aria-live="polite"></pre>
+</main>
+<script>
+class ExprError extends Error { constructor(message, position = null) {
+  super(message + (position === null ? "" : ` at position ${position}`));
+} }
+function tokenize(text) {
+  if (!text.trim()) throw new ExprError("empty expression");
+  const out = []; let i = 0;
+  while (i < text.length) {
+    if (/\s/.test(text[i])) { i++; continue; }
+    if (/[0-9.]/.test(text[i])) {
+      const start = i; let dots = 0; let digits = 0;
+      while (i < text.length && /[0-9.]/.test(text[i])) {
+        if (text[i] === ".") dots++; else digits++; i++;
+      }
+      const lexeme = text.slice(start, i);
+      if (dots > 1 || !digits) throw new ExprError(`malformed number '${lexeme}'`, start);
+      out.push({ lexeme, type: "NUMBER", position: start }); continue;
+    }
+    if ("+-*/%^".includes(text[i])) { out.push({ lexeme: text[i], type: "OPERATOR", position: i++ }); continue; }
+    if ("()".includes(text[i])) { out.push({ lexeme: text[i], type: text[i] === "(" ? "LPAREN" : "RPAREN", position: i++ }); continue; }
+    throw new ExprError(`invalid character '${text[i]}'`, i);
+  }
+  out.push({ lexeme: "", type: "EOF", position: text.length }); return out;
+}
+class Parser {
+  constructor(tokens) { this.t = tokens; this.i = 0; }
+  get c() { return this.t[this.i]; } take() { return this.t[this.i++]; }
+  parse() { const n = this.expr(); if (this.c.type !== "EOF")
+    throw new ExprError(this.c.type === "RPAREN" ? "extra closing bracket" : "two operands in a row or missing operator", this.c.position); return n; }
+  expr() { let n = this.term(); while ("+-".includes(this.c.lexeme)) { const op = this.take().lexeme; n = { kind:"binary", op, left:n, right:this.term() }; } return n; }
+  term() { let n = this.power(); while ("*/%".includes(this.c.lexeme)) { const op = this.take().lexeme;
+    if (this.c.type === "EOF" || "*/%+-^)".includes(this.c.lexeme)) throw new ExprError("missing operand", this.c.position);
+    n = { kind:"binary", op, left:n, right:this.power() }; } return n; }
+  power() { let n = this.unary(); if (this.c.lexeme === "^") { this.take();
+    if (this.c.type === "EOF" || this.c.lexeme === ")") throw new ExprError("missing operand", this.c.position);
+    n = { kind:"binary", op:"^", left:n, right:this.power() }; } return n; }
+  unary() { if ("+-".includes(this.c.lexeme)) return { kind:"unary", op:this.take().lexeme, operand:this.unary() }; return this.primary(); }
+  primary() { const x = this.c; if (x.type === "NUMBER") { this.take(); return { kind:"num", value:Number(x.lexeme) }; }
+    if (x.type === "LPAREN") { this.take(); if (this.c.type === "RPAREN") throw new ExprError("empty parentheses", this.c.position);
+      const n = this.expr(); if (this.c.type !== "RPAREN") throw new ExprError("missing closing bracket", this.c.position); this.take(); return n; }
+    if (x.type === "RPAREN") throw new ExprError("extra closing bracket", x.position);
+    throw new ExprError("missing operand", x.position); }
+}
+const fmt = n => Number.isInteger(n) ? String(n) : String(n);
+function tree(n, prefix = "", branch = "") {
+  let lines = [branch + (n.kind === "num" ? fmt(n.value) : n.op)];
+  const children = n.kind === "unary" ? [n.operand] : n.kind === "binary" ? [n.left, n.right] : [];
+  children.forEach((c, i) => lines.push(...tree(c, prefix + (i === children.length - 1 ? "    " : "│   "), prefix + (i === children.length - 1 ? "└── " : "├── "))));
+  return lines;
+}
+function infix(n) { return n.kind === "num" ? fmt(n.value) : n.kind === "unary" ? `(${n.op}${infix(n.operand)})` : `(${infix(n.left)} ${n.op} ${infix(n.right)})`; }
+function postfix(n) { return n.kind === "num" ? fmt(n.value) : n.kind === "unary" ? `${postfix(n.operand)} ${n.op}u` : `${postfix(n.left)} ${postfix(n.right)} ${n.op}`; }
+function prefix(n) { return n.kind === "num" ? fmt(n.value) : n.kind === "unary" ? `${n.op}u ${prefix(n.operand)}` : `${n.op} ${prefix(n.left)} ${prefix(n.right)}`; }
+function analyze(text) {
+  const tokens = tokenize(text), root = new Parser(tokens).parse(), steps = [], tac = []; let count = 0;
+  function visit(n) {
+    if (n.kind === "num") return n.value;
+    if (n.kind === "unary") { const v = visit(n.operand), r = n.op === "-" ? -v : v; steps.push(`${steps.length + 1}. ${n.op}${fmt(v)} = ${fmt(r)}`); return r; }
+    const l = visit(n.left), r = visit(n.right); if ((n.op === "/" || n.op === "%") && r === 0) throw new ExprError(n.op === "/" ? "division by zero" : "modulo by zero");
+    const value = {"+":l+r, "-":l-r, "*":l*r, "/":l/r, "%":l%r, "^":l**r}[n.op];
+    if (!Number.isFinite(value)) throw new ExprError("overflow");
+    steps.push(`${steps.length + 1}. ${fmt(l)} ${n.op} ${fmt(r)} = ${fmt(value)}`); return value;
+  }
+  function code(n) { if (n.kind === "num") return fmt(n.value); const a = n.kind === "unary" ? code(n.operand) : code(n.left), b = n.kind === "binary" ? code(n.right) : ""; const name = `t${++count}`; tac.push(`${name} = ${n.kind === "unary" ? n.op + a : `${a} ${n.op} ${b}`}`); return name; }
+  const value = visit(root), stats = { operands: 0, operators: 0 };
+  (function countNodes(n) { if (n.kind === "num") stats.operands++; else { stats.operators++; countNodes(n.kind === "unary" ? n.operand : n.left); if (n.kind === "binary") countNodes(n.right); } })(root);
+  const output = ["TOKEN TABLE", "Position Type       Lexeme", ...tokens.map(x => `${String(x.position).padEnd(8)} ${x.type.padEnd(10)} ${x.lexeme || "<EOF>"}`), "",
+    "SYNTAX TREE", ...tree(root), "", `INFIX:   ${infix(root)}`, `POSTFIX: ${postfix(root)}`, `PREFIX:  ${prefix(root)}`, "", "THREE-ADDRESS CODE", ...tac, `result = ${tac.length ? `t${count}` : fmt(value)}`, "",
+    "STATISTICS", `Operands: ${stats.operands}`, `Operators: ${stats.operators}`, `Tree height: ${height(root)}`, "", "EVALUATION STEPS", ...steps, "", `RESULT: ${fmt(value)}`];
+  return output.join("\n");
+}
+function height(n) { return n.kind === "num" ? 1 : 1 + Math.max(...(n.kind === "unary" ? [height(n.operand)] : [height(n.left), height(n.right)])); }
+document.getElementById("analyze").onclick = () => { const out = document.getElementById("output"); try { out.className = ""; out.textContent = analyze(document.getElementById("expression").value); } catch (e) { out.className = "error"; out.textContent = `Error: ${e.message}`; } };
+document.getElementById("analyze").click();
+</script>
+</body>
+</html>
