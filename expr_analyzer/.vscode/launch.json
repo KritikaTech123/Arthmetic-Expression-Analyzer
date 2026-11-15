@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Arithmetic Analyzer",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "expr_analyzer.main",
+      "args": ["(3 + 4) * 2 - 8 / 4 ^ 2"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run Analyzer Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "unittest",
+      "args": ["discover", "-s", "expr_analyzer/tests", "-v"],
+      "console": "integratedTerminal"
+    }
+  ]
+}
